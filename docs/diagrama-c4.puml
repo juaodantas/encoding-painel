@@ -1,0 +1,38 @@
+@startuml
+title Arquitetura - Encoding Painel 
+
+skinparam componentStyle rectangle
+skinparam defaultTextAlignment center
+top to bottom direction
+
+actor "Usuário" as usuario
+
+package "Encoding Painel" {
+    [Frontend\n(Vue.js)] as frontend
+    [Backend API\n(Node.js + Fastify)] as backend
+    database "PostgreSQL" as database
+    [Kafka] as kafka
+    [Encoding Service\n(NestJS)] as encoding_service
+
+    node "AWS S3" {
+        [raw-videos Bucket] as raw_bucket
+        [encoded-videos Bucket] as encoded_bucket
+    }
+}
+
+usuario --> frontend : Usa via navegador
+frontend --> backend : Solicita URL de upload
+backend --> frontend : Retorna URL pré-assinada
+frontend --> raw_bucket : Faz upload do vídeo
+frontend --> backend : Notifica upload via WebSocket
+backend --> kafka : Publica evento no Kafka
+kafka --> encoding_service : Notifica novo vídeo
+encoding_service --> raw_bucket : Faz download
+encoding_service --> encoding_service : Realiza encoding
+encoding_service --> encoded_bucket : Upload do vídeo codificado
+encoding_service --> kafka : Notifica processamento completo
+kafka --> backend : Informa que encoding terminou
+backend --> frontend : Atualiza via WebSocket
+backend --> database : Salva/consulta metadados
+
+@enduml
