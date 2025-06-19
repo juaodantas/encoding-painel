@@ -50,6 +50,8 @@ describe('VideoController', () => {
             // Arrange
             mockRequest.body = mockUploadData;
             const mockResponse = {
+                videoId: '123',
+                fileName: 'test-video.mp4',
                 uploadUrl: 'https://example.com/upload',
                 key: 'test-video.mp4'
             };

@@ -35,10 +35,24 @@ export const initializeSocket = (server: HTTPServer, fastify: FastifyInstance) =
   io.on('connection', (socket) => {
     console.log('Cliente conectado:', socket.id);
 
-    socket.on('video:upload-complete', async (data: VideoUploadCompleteData) => {
+    socket.on('video:upload-complete', async (data: VideoUploadCompleteData, callback) => {
+      // Confirmar recebimento imediatamente
+      if (typeof callback === 'function') {
+        callback({ received: true });
+      }
+      
       try {
         console.log('Recebendo evento de upload completo:', data);
-        await videoService.handleUploadComplete(data.videoId, data.etag);
+        const processedVideo = await videoService.handleUploadComplete(data.videoId, data.etag);
+        
+        // Use o status retornado pelo processedVideo em vez do data.status enviado
+        io.emit('video:status-updated', {
+          videoId: data.videoId,
+          status: processedVideo.status,
+          etag: data.etag,
+          fileName: processedVideo.fileName,
+          updatedAt: processedVideo.updatedAt
+        });
       } catch (error) {
         console.error('Erro ao processar upload completo:', error);
         socket.emit('video:upload-error', {
@@ -47,7 +61,7 @@ export const initializeSocket = (server: HTTPServer, fastify: FastifyInstance) =
         });
       }
     });
-
+  
     socket.on('disconnect', () => {
       console.log('Cliente desconectado:', socket.id);
     });
@@ -62,3 +76,13 @@ export const getIO = () => {
   }
   return io;
 }; 
+
+// Adicione um método para o VideoService notificar sobre atualizações de status
+export const emitVideoStatusUpdate = (videoData: { videoId: string, status: string, [key: string]: any }) => {
+  if (io) {
+    console.log('Emitindo atualização de status para todos os clientes:', videoData);
+    io.emit('video:status-updated', videoData);
+  } else {
+    console.error('Socket.IO não inicializado, não é possível emitir evento');
+  }
+};

@@ -26,6 +26,8 @@ export interface VideoResponse {
 }
 
 export interface UploadUrlResponse {
+  videoId: string;
+  fileName: string;
   uploadUrl: string;
   key: string;
 }

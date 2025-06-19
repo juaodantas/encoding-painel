@@ -34,7 +34,6 @@ class VideoController {
                 throw videoError;
             }
             const result = await this.videoService.generateUploadUrl(fileName, fileType, userId);
-            console.log('Result:==============', result);
             reply.send(result);
             return result;
         }
@@ -42,6 +41,21 @@ class VideoController {
             const videoError = {
                 message: error.message || 'Erro ao gerar URL de upload',
                 code: error.message?.includes('AWS S3') ? 'SERVER_ERROR' : 'INVALID_DATA'
+            };
+            reply.status(500).send(videoError);
+            throw videoError;
+        }
+    }
+    async getAllVideos(request, reply) {
+        try {
+            const videos = await this.videoService.getAllVideos();
+            reply.send(videos);
+            return videos;
+        }
+        catch (error) {
+            const videoError = {
+                message: error.message || 'Erro ao buscar vídeos',
+                code: 'SERVER_ERROR'
             };
             reply.status(500).send(videoError);
             throw videoError;

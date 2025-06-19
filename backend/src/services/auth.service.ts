@@ -73,7 +73,11 @@ export class AuthService {
     }
 
     const token = jwt.sign(
-      { id: user.id, email: user.email },
+      { 
+        id: user.id, 
+        email: user.email,
+        nome: user.nome  // <-- Adicione o nome ao payload
+      },
       process.env.JWT_SECRET || 'your-secret-key',
       { expiresIn: '1d' }
     );

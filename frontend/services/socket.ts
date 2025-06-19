@@ -79,8 +79,15 @@ class SocketService {
       });
 
       this.socket.on('video:status-updated', (data: VideoStatusUpdate) => {
-        console.log('Video status updated:', data);
-        this.statusCallbacks.forEach(callback => callback(data));
+        console.log('Video status updated RECEBIDO:', data);
+        console.log('Callbacks registrados:', this.statusCallbacks.length);
+        this.statusCallbacks.forEach(callback => {
+          try {
+            callback(data);
+          } catch (e) {
+            console.error('Erro ao executar callback de status:', e);
+          }
+        });
       });
 
       this.socket.on('video:error', (data: VideoUploadError) => {
@@ -99,12 +106,50 @@ class SocketService {
   }
 
   emitVideoUploadComplete(data: { videoId: string; etag: string; status: string }) {
-    if (this.socket && this.socket.connected) {
-      console.log('Emitting video:upload-complete:', data);
-      this.socket.emit('video:upload-complete', data);
-    } else {
-      console.error('Socket not connected. Cannot emit video:upload-complete');
+    // Verificar se o socket está definido
+    if (!this.socket) {
+      console.error('Socket não inicializado. Tentando reconectar...');
+      this.connect();
+      
+      // Tentar novamente após conexão
+      setTimeout(() => this.emitVideoUploadComplete(data), 1000);
+      return;
     }
+  
+    // Verificar se está conectado
+    if (!this.socket.connected) {
+      console.error('Socket desconectado. Tentando reconectar...');
+      this.socket.connect();
+      
+      // Registrar callback para quando conectar
+      this.socket.once('connect', () => {
+        console.log('Reconectado! Emitindo evento pendente...');
+        this._emitWithAck('video:upload-complete', data);
+      });
+      return;
+    }
+  
+    // Se chegou aqui, o socket está conectado
+    this._emitWithAck('video:upload-complete', data);
+  }
+  
+  // Novo método privado para emitir com acknowledge
+  private _emitWithAck(event: string, data: any, retries = 3) {
+    console.log(`Emitindo ${event} (tentativa 1/${retries+1}):`, data);
+    
+    // Emitir com ack
+    this.socket!.timeout(5000).emit(event, data, (err: any, response: any) => {
+      if (err) {
+        console.error(`Erro ao emitir ${event}:`, err);
+        if (retries > 0) {
+          console.log(`Tentando novamente... (${retries} tentativas restantes)`);
+          setTimeout(() => this._emitWithAck(event, data, retries - 1), 1000);
+        }
+        return;
+      }
+      
+      console.log(`Evento ${event} confirmado pelo servidor:`, response);
+    });
   }
 
   emitVideoUploadError(data: { videoId: string; error: string }) {

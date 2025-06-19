@@ -25,4 +25,12 @@ export default async function videoRoutes(fastify: FastifyInstance) {
       security: [{ bearerAuth: [] }]
     }
   }, videoController.getVideoById.bind(videoController));
+
+  fastify.get('/videos', {
+    schema: {
+      tags: ['videos'],
+      summary: 'Buscar todos os vídeos',
+      security: [{ bearerAuth: [] }]
+    }
+  }, videoController.getAllVideos.bind(videoController));
 }

@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.getIO = exports.initializeSocket = void 0;
+exports.emitVideoStatusUpdate = exports.getIO = exports.initializeSocket = void 0;
 const socket_io_1 = require("socket.io");
 const video_service_1 = require("../services/video.service");
 let io;
@@ -20,10 +20,22 @@ const initializeSocket = (server, fastify) => {
     videoService = new video_service_1.VideoService(fastify);
     io.on('connection', (socket) => {
         console.log('Cliente conectado:', socket.id);
-        socket.on('video:upload-complete', async (data) => {
+        socket.on('video:upload-complete', async (data, callback) => {
+            // Confirmar recebimento imediatamente
+            if (typeof callback === 'function') {
+                callback({ received: true });
+            }
             try {
                 console.log('Recebendo evento de upload completo:', data);
-                await videoService.handleUploadComplete(data.videoId, data.etag);
+                const processedVideo = await videoService.handleUploadComplete(data.videoId, data.etag);
+                // Use o status retornado pelo processedVideo em vez do data.status enviado
+                io.emit('video:status-updated', {
+                    videoId: data.videoId,
+                    status: processedVideo.status,
+                    etag: data.etag,
+                    fileName: processedVideo.fileName,
+                    updatedAt: processedVideo.updatedAt
+                });
             }
             catch (error) {
                 console.error('Erro ao processar upload completo:', error);
@@ -47,3 +59,14 @@ const getIO = () => {
     return io;
 };
 exports.getIO = getIO;
+// Adicione um método para o VideoService notificar sobre atualizações de status
+const emitVideoStatusUpdate = (videoData) => {
+    if (io) {
+        console.log('Emitindo atualização de status para todos os clientes:', videoData);
+        io.emit('video:status-updated', videoData);
+    }
+    else {
+        console.error('Socket.IO não inicializado, não é possível emitir evento');
+    }
+};
+exports.emitVideoStatusUpdate = emitVideoStatusUpdate;

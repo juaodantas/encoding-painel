@@ -56,6 +56,8 @@ export class VideoService {
       await this.videoRepository.create(videoData);
 
       return {
+        videoId: videoId,
+        fileName: fileName,
         uploadUrl: signedUrl,
         key: videoId
       };
@@ -84,43 +86,45 @@ export class VideoService {
     videoId: string, 
     etag: string
   ): Promise<VideoResponse> {
-    const kafkaProducer = createKafkaProducer(this.fastify);
-
+    console.log(`[handleUploadComplete] Iniciando para videoId: ${videoId}, etag: ${etag}`);
+    //const kafkaProducer = createKafkaProducer(this.fastify);
+  
     try {
       const video = await this.videoRepository.findById(videoId);
+      console.log(`[handleUploadComplete] Vídeo encontrado:`, video ? `ID: ${video.id}, Status: ${video.status}` : 'Não encontrado');
+      
       if (!video) {
         throw new Error('Vídeo não encontrado');
       }
-
+  
+      console.log(`[handleUploadComplete] Atualizando vídeo para status 'uploaded'`);
       const [updatedCount, updatedVideos] = await this.videoRepository.update(videoId, {
         status: 'uploaded',
-        metadata: { etag }
+        metadata: { ...video.metadata, etag }
       });
-
+  
+      console.log(`[handleUploadComplete] Resultado da atualização: count=${updatedCount}, videos=`, updatedVideos);
+  
       if (updatedCount === 0) {
         throw new Error('Falha ao atualizar status do vídeo');
       }
-
+  
       const updatedVideo = updatedVideos[0];
       const url = `https://raw-videos-poc.s3.us-east-1.amazonaws.com/${updatedVideo.originalUrl}`;
-
+  
       // Emite evento de atualização
       const io = getIO();
+      console.log(`[handleUploadComplete] Emitindo evento 'video:status-updated' com status 'uploaded'`);
       io.emit('video:status-updated', {
         videoId,
         status: 'uploaded',
         etag
       });
-
+  
       // Envia mensagem para o Kafka
-      await kafkaProducer.sendMessage('encoder-video', {
-        url,
-        videoId,
-        status: 'uploaded',
-        etag,
-        timestamp: new Date().toISOString()
-      });
-
+      console.log(`[handleUploadComplete] Enviando mensagem para Kafka`);
+  
+      console.log(`[handleUploadComplete] Processo concluído com sucesso`);
       return {
         id: updatedVideo.id,
         fileName: updatedVideo.titulo,
@@ -132,6 +136,7 @@ export class VideoService {
         updatedAt: updatedVideo.updated_at
       };
     } catch (error) {
+      console.error(`[handleUploadComplete] Erro:`, error);
       throw error;
     }
   }
@@ -158,6 +163,25 @@ export class VideoService {
       createdAt: video.created_at,
       updatedAt: video.updated_at
     };
+  }
+
+  /**
+   * Obtém todos os vídeos
+   * @returns Promise<VideoResponse[]> - Lista de vídeos
+   * @throws {Error} - Erro caso a operação falhe
+   */
+  async getAllVideos(): Promise<VideoResponse[]> {
+    const videos = await this.videoRepository.findAll();
+    return videos.map(video => ({
+      id: video.id,
+      fileName: video.titulo,
+      fileType: video.metadata?.fileType || '',
+      userId: video.usuarioCriadorId,
+      url: video.originalUrl,
+      status: video.status,
+      createdAt: video.created_at,
+      updatedAt: video.updated_at
+    }));
   }
 
   /**

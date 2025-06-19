@@ -3,7 +3,7 @@
     <header class="bg-white shadow">
       <div class="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8 flex justify-between items-center">
         <h1 class="text-3xl font-bold text-gray-900">
-          Bem vindo {{ authStore.user?.nome }}, ao Painel de Encoding de vídeos
+          Bem vindo {{ authStore.userName }}, ao Painel de Encoding de vídeos
         </h1>
         <button @click="handleLogout" class="bg-red-500 hover:bg-red-700 text-white font-bold py-2 px-4 rounded">
           Logout
@@ -36,6 +36,13 @@
       <div v-if="uploadError" class="mt-4 p-4 bg-red-100 border border-red-400 text-red-700 rounded">
         {{ uploadError }}
       </div>
+      
+      <!-- Lista de Vídeos -->
+      <div class="mt-8 px-4 sm:px-0">
+        <div class="max-w-3xl mx-auto">
+          <VideoList ref="videoListRef" />
+        </div>
+      </div>
     </main>
   </div>
 </template>
@@ -45,6 +52,7 @@ import { computed, watch, onMounted, onUnmounted, ref } from 'vue';
 import { useAuthStore } from '~/stores/auth';
 import { useRouter } from 'vue-router';
 import VideoUploadButton from '~/components/VideoUploadButton.vue';
+import VideoList from '~/components/VideoList.vue';
 import { api } from '~/services/api'
 import { s3 } from '~/services/s3'
 import { socketService } from '~/services/socket'
@@ -52,6 +60,7 @@ import { socketService } from '~/services/socket'
 const authStore = useAuthStore();
 const router = useRouter();
 const videoUploadRef = ref<InstanceType<typeof VideoUploadButton> | null>(null);
+const videoListRef = ref<InstanceType<typeof VideoList> | null>(null);
 
 // Computed property para verificar autenticação
 const isAuthenticated = computed(() => !!authStore.token);
@@ -68,6 +77,24 @@ const handleLogout = () => {
   router.push('/login');
 };
 
+const handleVideoStatusUpdate = (status: any) => {
+  console.log('Status do vídeo atualizado:', status);
+  uploadStatus.value = `Status do vídeo: ${status.status}`;
+  
+  // Atualizar o vídeo na lista sem recarregar tudo
+  if (videoListRef.value) {
+    // Transforme o objeto para o formato esperado pelo componente
+    const videoUpdate = {
+      id: status.videoId,  // Mapeie videoId para id
+      status: status.status,
+      // Inclua outros campos se necessário
+    };
+    
+    console.log('Atualizando vídeo na lista:', videoUpdate);
+    videoListRef.value.updateOrAddVideo(videoUpdate);
+  }
+};
+
 const handleVideoSubmit = async (file: File) => {
   console.log('Submitting video:', file.name);
   uploadStatus.value = 'Iniciando upload...';
@@ -77,8 +104,17 @@ const handleVideoSubmit = async (file: File) => {
   try {
     // Gera URL de upload
     uploadStatus.value = 'Gerando URL de upload...';
-    const generateUploadData = await api.generateUpload(file, authStore.user?.id);
-    
+    const generateUploadData = await api.generateUpload(file, authStore.user.id);
+    console.log('Generated upload data:', generateUploadData);
+    if (videoListRef.value) {
+      videoListRef.value.updateOrAddVideo({
+        id: generateUploadData.videoId,
+        fileName: file.name,
+        status: 'uploading',
+        size: file.size
+      });
+    }
+
     // Faz o upload do arquivo
     uploadStatus.value = 'Enviando arquivo para o S3...';
     const uploadResult = await s3.uploadFile(generateUploadData?.uploadUrl, file);
@@ -96,9 +132,19 @@ const handleVideoSubmit = async (file: File) => {
       
       uploadStatus.value = 'Vídeo enviado com sucesso!';
       uploadProgress.value = 100;
+
+      // Atualiza o status do vídeo na lista
+      if (videoListRef.value) {
+        videoListRef.value.updateOrAddVideo({
+          id: generateUploadData.videoId,
+          status: 'uploaded'
+        });
+      }
       
-      // Reseta o estado após 2 segundos
+      
+      // Atualiza a lista de vídeos após upload bem-sucedido
       setTimeout(() => {
+        videoListRef.value?.refreshVideos();
         uploadStatus.value = '';
         uploadProgress.value = 0;
         videoUploadRef.value?.resetState();
@@ -136,8 +182,9 @@ const handleVideoSubmit = async (file: File) => {
 };
 
 // Guard to redirect to login if token is not present
-watch(() => authStore.token, (newToken) => {
-  if (!newToken) {
+watch(() => authStore.isAuthenticated, (isAuth) => {
+  if (!isAuth && authStore.isTokenLoaded) {
+    console.log('Usuário não autenticado, redirecionando para login...');
     router.push('/login');
   }
 }, { immediate: true });
@@ -147,19 +194,23 @@ onMounted(() => {
   if (authStore.token) {
     console.log('Initializing Socket.IO connection...');
     socketService.connect();
-    
+     
     // Callback para atualizações de status
-    socketService.onVideoStatusUpdate((status) => {
-      uploadStatus.value = `Status do vídeo: ${status.status}`;
-      if (status.status === 'uploaded') {
-        uploadProgress.value = 100;
-      }
-    });
+    socketService.onVideoStatusUpdate(handleVideoStatusUpdate);
 
+    // Callback para erros
     // Callback para erros
     socketService.onVideoError((error) => {
       uploadError.value = `Erro no upload: ${error.error}`;
       uploadProgress.value = 0;
+      
+      // Atualiza o status do vídeo com erro na lista
+      if (videoListRef.value && error.videoId) {
+        videoListRef.value.updateOrAddVideo({
+          id: error.videoId,
+          status: 'error'
+        });
+      }
     });
   } else {
     console.log('No token available, skipping Socket.IO initialization');
@@ -170,5 +221,6 @@ onMounted(() => {
 onUnmounted(() => {
   console.log('Disconnecting Socket.IO...');
   socketService.disconnect();
+  socketService.removeStatusCallback(handleVideoStatusUpdate);
 });
-</script> 
+</script>

@@ -24,4 +24,11 @@ async function videoRoutes(fastify) {
             security: [{ bearerAuth: [] }]
         }
     }, videoController.getVideoById.bind(videoController));
+    fastify.get('/videos', {
+        schema: {
+            tags: ['videos'],
+            summary: 'Buscar todos os vídeos',
+            security: [{ bearerAuth: [] }]
+        }
+    }, videoController.getAllVideos.bind(videoController));
 }

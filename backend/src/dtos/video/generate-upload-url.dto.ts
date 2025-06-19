@@ -25,6 +25,8 @@ export const generateUploadUrlSchema: FastifySchema = {
     200: {
       type: 'object',
       properties: {
+        videoId: { type: 'string' },
+        fileName: { type: 'string' },
         uploadUrl: { type: 'string' },
         key: { type: 'string' }
       }

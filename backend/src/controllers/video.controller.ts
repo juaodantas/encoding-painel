@@ -62,6 +62,24 @@ export class VideoController {
     }
   }
 
+  async getAllVideos(
+    request: FastifyRequest,
+    reply: FastifyReply
+  ): Promise<VideoResponse[]> {
+    try {
+      const videos = await this.videoService.getAllVideos();
+      reply.send(videos);
+      return videos;
+    } catch (error: any) {
+      const videoError: VideoError = {
+        message: error.message || 'Erro ao buscar vídeos',
+        code: 'SERVER_ERROR'
+      };
+      reply.status(500).send(videoError);
+      throw videoError;
+    }
+  }
+
   /**
    * Obtém um vídeo pelo ID
    * @param request - Requisição contendo ID do vídeo
